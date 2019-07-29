@@ -3,16 +3,17 @@
 // run from command line as follows
 // ImageJ-win64.exe -macro "C:\path\to\remove_scalebar.ijm" "D:\path\to\data\|outputDirName|infoBarheight|metricScale|pixelScale"
 
-function createInnerMask() {
-	choice = showMessageWithCancel("Create inner Mask", "If there are large voids inside area of interest you can select them now using the polygone tool. Confirm the selection using the OK button. Or cancel the action using the Cancel button.");
+function createInnerMask( filename ) {
+	selectWindow( filename );
+	print("inner manual selection");
+	choice = getBoolean("If there are large voids inside area of interest you can select them now using the polygone tool.\nClick Yes to processd or cancel the action using the No button. Press Cancel to stop the macro.");
 	if ( choice ) {
+		waitForUser("Create inner Mask", "Select the inner mask. Click OK if ready.");
 		setTool("polygon");
 		run("Fit Spline");
 		run("Create Mask");
-		// combine masks
-		imageCalculator("AND create", "outerMask","innerMask");
-		// TODO: Titel umbenennen
-		choice = createInnerMask();
+		run("Select None"); // remove selection
+		choice = createInnerMask( filename );
 	}
 	return choice;
 }
@@ -32,23 +33,16 @@ macro "remove_SEMScaleBar" {
 	print("Starting process using the following arguments...");
 	print("  File: " + filePath);
 	print("  Directory: " + dir);
-	print("  argument based image-scale: " + pixelScale + " px / " + metricScale + " nm");
-	if ( metricScale == 0 || pixelScale == 0 ) {
-		do_scaling = false;
-		print("  No image-scaling set! Calculation only pixel values!");
-	} else {
-		do_scaling = true;
-		scaleX = metricScale/pixelScale;
-		print( "  Set scale 1 px = " + scaleX + " nm" );
-	}
-	print("Info bar height: " + infoBarHeight + " px");
 	print("------------");
 	
 	//directory handling
-	outputDir_Cut = dir + "/" + outputDirName + "/";
-	File.makeDirectory(outputDir_Cut);
-	list = getFileList(dir);
+	outputDir_manual = dir + "/manual_segmentation/";
+	outputDir_full = dir + "/full_segmentation/";
+	File.makeDirectory(outputDir_manual);
+	File.makeDirectory(outputDir_full);
 	
+	list = getFileList(dir);
+	setBatchMode(true);
 	// process only images
 	if (!endsWith(filePath,"/") && ( endsWith(filePath,".tif") || endsWith(filePath,".jpg") || endsWith(filePath,".JPG") ) ) {
 		open(filePath);
@@ -72,25 +66,58 @@ macro "remove_SEMScaleBar" {
 			//////////////////////
 			// processing
 			//////////////////////
-			
-			//selectWindow("Cryo+Harz_069-cut.tif");
+			maskTitle = "Mask";
+			print("denoising");
 			run("Non-local Means Denoising", "sigma=15 smoothing_factor=1 auto");
+			
 			setTool("polygon");
-			// TODO: Nutzer muss Außenspline erstellen -> Alert + OK zum bestätigen
+			setBatchMode("show");
+			print("outer manual selection");
+			waitForUser("Create outer Mask", "Select the outer area.");
+			
 			run("Fit Spline");
 			run("Create Mask");
-			// TODO: Titel umbenennen
-			// TODO: Nutzer muss Innenspline erstellen -> Alert + OK zum bestätigen und abbrechen zum verwerfen
-			// TODO: Wenn OK:
-
-				
+			selectWindow( maskTitle );
+			maskId = getImageID();
+			run("Invert"); //invert image to be able to remove inner selections
 			
 			selectImage(imageId);
+			run("Select None"); // remove selection
+			
+			//rename( "outerMask" )
+			createInnerMask( filename );
+			run("Select None"); // remove selection
+			selectWindow( maskTitle );
+			run("Invert"); // reinvert image to get the actual mask
+			
+			print("saving manual selection...");
+			saveAs("Tiff", outputDir_manual + filename );
+			rename( maskTitle );
+			run("Set Measurements...", "area area_fraction redirect=None decimal=5");
+			run("Measure");
+			selectWindow("Results");
+			saveAs("Text", outputDir_manual + substring(filename, 0, lengthOf(filename)-4) + "_area.csv");
+			selectImage(imageId);
+			print("thresholding");
 			run("Auto Local Threshold", "method=Phansalkar radius=15 parameter_1=0 parameter_2=0");
-			imageCalculator("AND create", filename, "Mask");
-			//selectWindow("Result of Cryo+Harz_069-cut.tif");
+			
+			print("combine masks");
+			imageCalculator("AND", maskTitle, filename);
+
+			selectWindow( maskTitle );
+			// remove noise and holes
+			run("Erode");
+			run("Dilate");
+			run("Close-");
+			
+			
+			print("saving pore selection selection");
+			saveAs("Tiff", outputDir_full + filename );
+			
 			run("Analyze Particles...", "display clear");
-			//run("Distribution...", "parameter=Area or=57 and=0-0");
+			selectWindow("Results");
+			saveAs("Text", outputDir_full + substring(filename, 0, lengthOf(filename)-4) + "_pores.csv");
+			close();
 
 			//////////////////////
 			// close this file
