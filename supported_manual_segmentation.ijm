@@ -18,7 +18,7 @@ function createInnerMask( filename ) {
 	return choice;
 }
 
-macro "remove_SEMScaleBar" {
+macro "supported_manual_segmentation" {
 	// check if an external argument is given or define the options
 	arg = getArgument();
 	if ( arg == "" ) {
@@ -42,7 +42,7 @@ macro "remove_SEMScaleBar" {
 	File.makeDirectory(outputDir_full);
 	
 	list = getFileList(dir);
-	setBatchMode(true);
+	//setBatchMode(true);
 	// process only images
 	if (!endsWith(filePath,"/") && ( endsWith(filePath,".tif") || endsWith(filePath,".jpg") || endsWith(filePath,".JPG") ) ) {
 		open(filePath);
@@ -69,16 +69,31 @@ macro "remove_SEMScaleBar" {
 			maskTitle = "Mask";
 			print("denoising");
 			run("Non-local Means Denoising", "sigma=15 smoothing_factor=1 auto");
+			run("Enhance Contrast...", "saturated=0.3");
+			setAutoThreshold("Otsu dark");// Minimum
+			run("Create Mask");
+			run("Erode");
+			run("Dilate");
+			run("Dilate");
+			run("Erode");
+			run("Fill Holes");
+			
+			rename( maskTitle );
+			run("Merge Channels...", "c1=mask c4=" + filename + " create keep");
+			selectWindow("Composite");//selectImage(imageId);
 			
 			setTool("polygon");
-			setBatchMode("show");
+			//setBatchMode("show");
 			print("outer manual selection");
-			waitForUser("Create outer Mask", "Select the outer area.");
-			
-			run("Fit Spline");
-			run("Create Mask");
-			selectWindow( maskTitle );
-			maskId = getImageID();
+			waitForUser("Select the outer area.", "Add something to outer mask. Press OK if selection is done or no selection is neccessary.");
+			seltype = getSelectionType();
+			if ( seltype == 2 ) { // 0=rectangle, 1=oval, 2=polygon, 3=freehand, 4=traced, 5=straight line, 6=segmented line, 7=freehand line, 8=angle, 9=composite, 10=point, -1=no selection. 
+				run("Fit Spline");
+			}
+			if ( seltype < 0 ) {
+				run("Create Mask");
+				selectWindow( maskTitle );
+			}
 			run("Invert"); //invert image to be able to remove inner selections
 			
 			selectImage(imageId);
