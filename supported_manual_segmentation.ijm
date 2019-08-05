@@ -3,19 +3,33 @@
 // run from command line as follows
 // ImageJ-win64.exe -macro "C:\path\to\remove_scalebar.ijm" "D:\path\to\data\|outputDirName|infoBarheight|metricScale|pixelScale"
 
-function createInnerMask( filename ) {
-	selectWindow( filename );
-	print("inner manual selection");
+function createInnerMask( filename, selectWindowName ) {
+	selectWindow( selectWindowName );
 	choice = getBoolean("If there are large voids inside area of interest you can select them now using the polygone tool.\nClick Yes to processd or cancel the action using the No button. Press Cancel to stop the macro.");
 	if ( choice ) {
 		waitForUser("Create inner Mask", "Select the inner mask. Click OK if ready.");
 		setTool("polygon");
-		run("Fit Spline");
-		run("Create Mask");
-		run("Select None"); // remove selection
-		choice = createInnerMask( filename );
+		stype = selectionType();
+		if ( stype == 2 ) { // 0=rectangle, 1=oval, 2=polygon, 3=freehand, 4=traced, 5=straight line, 6=segmented line, 7=freehand line, 8=angle, 9=composite, 10=point, -1=no selection. 
+			run("Fit Spline");
+		}
+		if ( stype > 0 ) {
+			print( "   - Selection found." );
+			run("Create Mask");
+			run("Select None"); // remove selection
+		} else {
+			print( "   - No selection found. Aborting..." );
+		}
+		choice = createInnerMask( filename, selectWindowName );
 	}
 	return choice;
+}
+
+function redrawComposit( compositeTitle, maskTitle, filename ) {
+		selectWindow( compositeTitle );//selectImage(imageId);
+		close();
+		selectWindow( maskTitle );
+		run("Merge Channels...", "c1=" + maskTitle + " c4=" + filename + " create keep");
 }
 
 macro "supported_manual_segmentation" {
@@ -67,6 +81,7 @@ macro "supported_manual_segmentation" {
 			// processing
 			//////////////////////
 			maskTitle = "Mask";
+			compositeTitle = "Composite";
 			print("denoising");
 			run("Non-local Means Denoising", "sigma=15 smoothing_factor=1 auto");
 			run("Enhance Contrast...", "saturated=0.3");
@@ -79,35 +94,44 @@ macro "supported_manual_segmentation" {
 			run("Fill Holes");
 			
 			rename( maskTitle );
-			run("Merge Channels...", "c1=mask c4=" + filename + " create keep");
-			selectWindow("Composite");//selectImage(imageId);
+			run("Merge Channels...", "c1=" + maskTitle + " c4=" + filename + " create keep");
+			selectWindow( compositeTitle );//selectImage(imageId);
+
 			
 			setTool("polygon");
 			//setBatchMode("show");
 			print("outer manual selection");
-			waitForUser("Select the outer area.", "Add something to outer mask. Press OK if selection is done or no selection is neccessary.");
-			seltype = getSelectionType();
-			if ( seltype == 2 ) { // 0=rectangle, 1=oval, 2=polygon, 3=freehand, 4=traced, 5=straight line, 6=segmented line, 7=freehand line, 8=angle, 9=composite, 10=point, -1=no selection. 
+			waitForUser("Select the outer area.", "Add something to outer mask.\nIf the red mask contains everything that should be selected press OK\nor select additional areas and press OK.");
+			stype = selectionType();
+			if ( stype == 2 ) { // 0=rectangle, 1=oval, 2=polygon, 3=freehand, 4=traced, 5=straight line, 6=segmented line, 7=freehand line, 8=angle, 9=composite, 10=point, -1=no selection. 
 				run("Fit Spline");
 			}
-			if ( seltype < 0 ) {
+			if ( stype > 0 ) {
+				print( "   - Selection found." );
 				run("Create Mask");
-				selectWindow( maskTitle );
+				run("Select None"); // remove selection
+				//TODO Combine masks
 			}
-			run("Invert"); //invert image to be able to remove inner selections
 			
-			selectImage(imageId);
-			run("Select None"); // remove selection
+			redrawComposit( compositeTitle, maskTitle, filename );
+
+			selectWindow( maskTitle );
+			run("Invert"); 
+			selectWindow( compositeTitle );//selectImage(imageId);
 			
 			//rename( "outerMask" )
-			createInnerMask( filename );
-			run("Select None"); // remove selection
+			print(" - inner manual selection");
+			createInnerMask( filename, compositeTitle );
+			//run("Select None"); // remove selection
 			selectWindow( maskTitle );
 			run("Invert"); // reinvert image to get the actual mask
 			
+			redrawComposit( compositeTitle, maskTitle, filename );
 			print("saving manual selection...");
-			saveAs("Tiff", outputDir_manual + filename );
-			rename( maskTitle );
+			saveAs("Tiff", outputDir_manual + "composit_" + filename );
+
+			
+			selectWindow( maskTitle );
 			run("Set Measurements...", "area area_fraction redirect=None decimal=5");
 			run("Measure");
 			selectWindow("Results");
