@@ -25,10 +25,10 @@ function createInnerMask( filename, selectWindowName ) {
 }
 
 function redrawComposit( compositeTitle, maskTitle, filename ) {
-		selectWindow( compositeTitle );//selectImage(imageId);
-		close();
-		selectWindow( maskTitle );
-		run("Merge Channels...", "c1=" + maskTitle + " c4=" + filename + " create keep");
+	selectWindow( compositeTitle );//selectImage(imageId);
+	close();
+	selectWindow( maskTitle );
+	run("Merge Channels...", "c1=" + maskTitle + " c4=" + filename + " create keep");
 }
 
 macro "supported_manual_segmentation" {
@@ -43,10 +43,14 @@ macro "supported_manual_segmentation" {
 		filePath		= arg_split[0];
 	}
 	dir = File.getParent(filePath);
+	
+	thresholdType = 3; // 1 = Auto Local Threshold (Phansalkar); 2 = Robust Automatic Threshold Selection; 3 = Otsu
 	print("Starting process using the following arguments...");
 	print("  File: " + filePath);
 	print("  Directory: " + dir);
+	print("  using threshold method: " + thresholdType);
 	print("------------");
+	
 	
 	//directory handling
 	outputDir_manual = dir + "/manual_segmentation/";
@@ -91,10 +95,13 @@ macro "supported_manual_segmentation" {
 			//////////////////////
 			cleanup = getBoolean("Do you want to crop the image?\nEg if there is intense noise at the borders.\nPress [Cancel] to stop the macro.");
 			if ( cleanup ) {
-			print(" - cropping");
+				print(" - cropping");
 				setTool("rectangle");
 				waitForUser("Select the area you want to keep.", "Press [OK] when ready..");
-				run("Crop");
+				stype = selectionType();
+				if ( stype == 0 ) { //rectangle
+					run("Crop");
+				}
 			}
 			
 			//////////////////////
@@ -103,6 +110,7 @@ macro "supported_manual_segmentation" {
 			print(" - thresholding and cleanup");
 			setAutoThreshold("Otsu dark");// Minimum
 			run("Create Mask");
+			run("Options...", "iterations=1 count=1 black do=Nothing"); // reset binary options
 			run("Erode");
 			run("Dilate");
 			run("Dilate");
@@ -128,7 +136,6 @@ macro "supported_manual_segmentation" {
 				print( "   - Selection found." );
 				run("Create Mask");
 				run("Select None"); // remove selection
-				//TODO Combine masks
 			} else {
 				print( "   - nothing selected, skipping." );
 			}
@@ -155,6 +162,7 @@ macro "supported_manual_segmentation" {
 			run("Options...", "iterations=4 count=1 black do=Erode");
 			//saveAs("Tiff", outputDir_manual + filename );
 			//rename( maskTitle );
+			run("Clear Results");
 			run("Set Measurements...", "area area_fraction redirect=None decimal=5");
 			run("Measure");
 			selectWindow("Results");
@@ -166,7 +174,6 @@ macro "supported_manual_segmentation" {
 			// 3 possible algorythms!
 			//////////////////////
 			print(" - thresholding");
-			thresholdType = 3;
 			if ( thresholdType == 1 ) {
 				print( "   - Auto Local Threshold (Phansalkar)" );
 				run("Auto Local Threshold", "method=Phansalkar radius=10 parameter_1=0 parameter_2=0");
@@ -200,13 +207,14 @@ macro "supported_manual_segmentation" {
 			//////////////////////
 			print("   - combine masks");
 			imageCalculator("AND", poreName, maskTitle);
+			selectWindow( maskTitle );
+			close();
 			
 			//////////////////////
 			// Statistical analyse
 			//////////////////////
-			print(" - saving pore selection selection");
-			saveAs("Tiff", outputDir_full + filename );
 			rename( poreName );
+			run("Clear Results");
 			run("Analyze Particles...", "display clear");
 			selectWindow("Results");
 			saveAs("Text", outputDir_full + substring(filename, 0, lengthOf(filename)-4) + "_pores.csv");
@@ -221,6 +229,9 @@ macro "supported_manual_segmentation" {
 			selectWindow("C1-" + compFileName);
 			run("Invert");
 			run("Merge Channels...", "c1=" + "C1-" + compFileName + " c2=" + poreName + " c4=" + "C2-" + compFileName + " create ignore");
+			print(" - saving pore selection selection");
+			saveAs("Tiff", outputDir_full + filename );
+			
 		
 			//////////////////////
 			// close this file
