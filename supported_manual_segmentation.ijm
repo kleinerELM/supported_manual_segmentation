@@ -3,6 +3,12 @@
 // run from command line as follows
 // ImageJ-win64.exe -macro "C:\path\to\remove_scalebar.ijm" "D:\path\to\data\|outputDirName|infoBarheight|metricScale|pixelScale"
 
+// global definitions
+thresholdTypeArray = newArray("Auto Local Threshold (Phansalkar)", "Robust Automatic Threshold Selection", "Normal Threshold" );
+thresholdStdMethodsArray = getList("threshold.methods");//newArray("Otsu", "Triangle");
+thresholdType = 0; // 0 = Auto Local Threshold (Phansalkar); 1 = Robust Automatic Threshold Selection; 2 = standard
+thresholdStdMethod = 0;
+
 function createInnerMask( filename, selectWindowName ) {
 	selectWindow( selectWindowName );
 	choice = getBoolean("If there are large voids inside area of interest\nyou can select them now.\nClick [Yes] to proceed or [No] to skip the action. Press [Cancel] to stop the macro.");
@@ -31,26 +37,16 @@ function redrawComposit( compositeTitle, maskTitle, filename ) {
 	run("Merge Channels...", "c1=" + maskTitle + " c4=" + filename + " create keep");
 }
 
-macro "supported_manual_segmentation" {
-	// check if an external argument is given or define the options
-	arg = getArgument();
-	if ( arg == "" ) {
-		filePath 		= File.openDialog("Choose a file");
-		//define number of slices for uniformity analysis
-	} else {
-		print("arguments found");
-		arg_split = split(getArgument(),"|");
-		filePath		= arg_split[0];
-	}
+function mainProcess( filePath ) {
 	dir = File.getParent(filePath);
-	
-	thresholdType = 3; // 1 = Auto Local Threshold (Phansalkar); 2 = Robust Automatic Threshold Selection; 3 = Otsu
+
 	print("Starting process using the following arguments...");
 	print("  File: " + filePath);
 	print("  Directory: " + dir);
-	print("  using threshold method: " + thresholdType);
-	print("------------");
+	print("  using threshold type: " + thresholdTypeArray[thresholdType] + " (" + thresholdType + ")" );
+	print("  using threshold method: " + thresholdStdMethodsArray[thresholdStdMethod] + " (" + thresholdStdMethod + ")" );
 	
+	print("------------");
 	
 	//directory handling
 	outputDir_manual = dir + "/manual_segmentation/";
@@ -136,7 +132,7 @@ macro "supported_manual_segmentation" {
 				print( "   - Selection found." );
 				run("Create Mask");
 				run("Select None"); // remove selection
-			} else {
+			} else {
 				print( "   - nothing selected, skipping." );
 			}
 			
@@ -171,19 +167,19 @@ macro "supported_manual_segmentation" {
 
 			//////////////////////
 			// try to segment pores
-			// 3 possible algorythms!
+			// 3 possible algorithms!
 			//////////////////////
 			print(" - thresholding");
-			if ( thresholdType == 1 ) {
-				print( "   - Auto Local Threshold (Phansalkar)" );
+			print( "   - " + thresholdTypeArray[thresholdType] );
+			
+			if ( thresholdType == 0 ) {
 				run("Auto Local Threshold", "method=Phansalkar radius=10 parameter_1=0 parameter_2=0");
-			} else if ( thresholdType == 2 ) {
-				print( "   - Robust Automatic Threshold Selection" );
+			} else if ( thresholdType == 1 ) {
 				run("Robust Automatic Threshold Selection", "noise=25 lambda=3 min=354");
 				run("Invert");
-			} else if ( thresholdType == 3 ) {
-				print( "   - Otsu" );
-				setAutoThreshold("Otsu");// Minimum	
+			} else if ( thresholdType == 2 ) {
+				print( "     " + thresholdStdMethodsArray[thresholdStdMethod] );
+				setAutoThreshold( thresholdStdMethodsArray[thresholdStdMethod] );
 				run("Create Mask");
 			}
 			rename( poreName );
@@ -213,7 +209,7 @@ macro "supported_manual_segmentation" {
 			//////////////////////
 			// Statistical analyse
 			//////////////////////
-			rename( poreName );
+			rename( poreName );
 			run("Clear Results");
 			run("Analyze Particles...", "display clear");
 			selectWindow("Results");
@@ -236,15 +232,65 @@ macro "supported_manual_segmentation" {
 			//////////////////////
 			// close this file
 			//////////////////////
-			print( " closing file ..." );
-			selectImage(imageId);
-			close();
+			if ( thresholdType == 1 ) {
+				print( " closing file ..." );
+				selectImage(imageId);
+				close();
+			}
 			print( "" );
 		}
 	}
 	// exit script
 	print("Done!");
-	if ( arg != "" ) {
+	if ( arg == "" ) {
+		restart = getBoolean("Do you want to proceed?\nPress [Cancel] to stop the macro without closing ImageJ.");
+		if ( restart ) {
+			while (nImages>0) { 
+				selectImage(nImages); 
+				close(); 
+			}
+			filePath 		= File.openDialog("Choose a file");
+			mainProcess( filePath );
+		}
+	} else {
+		restart = false;
+	}
+	if ( !restart || arg != "" ) {
 		run("Quit");
 	}
+}
+
+macro "supported_manual_segmentation" {
+	// check if an external argument is given or define the options
+	arg = getArgument();
+	if ( arg == "" ) {
+		Dialog.create("Choose Options");
+		Dialog.addMessage("Choose the threshold type (and method) for pore selection.") 
+		Dialog.addChoice("Threshold type:", thresholdTypeArray, thresholdTypeArray[thresholdType] );
+		Dialog.addChoice("Normal threshold method:", thresholdStdMethodsArray, thresholdStdMethodsArray[thresholdStdMethod] );
+		Dialog.show();
+		thresholdTypeString = Dialog.getChoice();
+		for (i=0; i<thresholdTypeArray.length; i++) {
+			if (thresholdTypeArray[i] == thresholdTypeString){
+				thresholdType = i;
+			}
+		}
+		thresholdStdMethodString = Dialog.getChoice();
+		for (i=0; i<thresholdStdMethodsArray.length; i++) {
+			if (thresholdStdMethodsArray[i] == thresholdStdMethodString){
+				thresholdStdMethod = i;
+			}
+		}
+		filePath 		= File.openDialog("Choose a file");
+		//define number of slices for uniformity analysis
+	} else {
+		print("arguments found");
+		arg_split = split(getArgument(),"|");
+		filePath		= arg_split[0];
+	}
+	
+	
+	
+	mainProcess( filePath );
+	
 }
