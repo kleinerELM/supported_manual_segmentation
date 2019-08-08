@@ -1,13 +1,14 @@
 // Macro for ImageJ 1.52d for Windows
 // written by Florian Kleiner 2019
 // run from command line as follows
-// ImageJ-win64.exe -macro "C:\path\to\remove_scalebar.ijm" "D:\path\to\data\|outputDirName|infoBarheight|metricScale|pixelScale"
+// ImageJ-win64.exe -macro "C:\path\to\supported_manual_segmentation.ijm" "D:\path\to\file.tif|thresholdType|thresholdStdMethod"
 
 // global definitions
 thresholdTypeArray = newArray("Auto Local Threshold (Phansalkar)", "Robust Automatic Threshold Selection", "Normal Threshold" );
-thresholdStdMethodsArray = getList("threshold.methods");//newArray("Otsu", "Triangle");
-thresholdType = 0; // 0 = Auto Local Threshold (Phansalkar); 1 = Robust Automatic Threshold Selection; 2 = standard
+thresholdStdMethodsArray = getList("threshold.methods");
+thresholdType = 0; // 0 = Auto Local Threshold ...
 thresholdStdMethod = 0;
+autoThresholdOuterMask = true;
 
 function createInnerMask( filename, selectWindowName ) {
 	selectWindow( selectWindowName );
@@ -45,7 +46,7 @@ function mainProcess( filePath ) {
 	print("  Directory: " + dir);
 	print("  using threshold type: " + thresholdTypeArray[thresholdType] + " (" + thresholdType + ")" );
 	print("  using threshold method: " + thresholdStdMethodsArray[thresholdStdMethod] + " (" + thresholdStdMethod + ")" );
-	
+	print("  auto threshold outer mask: " + autoThresholdOuterMask );
 	print("------------");
 	
 	//directory handling
@@ -93,7 +94,7 @@ function mainProcess( filePath ) {
 			if ( cleanup ) {
 				print(" - cropping");
 				setTool("rectangle");
-				waitForUser("Select the area you want to keep.", "Press [OK] when ready..");
+				waitForUser("Information", "Select the area you want to keep.\nPress [OK] when ready..");
 				stype = selectionType();
 				if ( stype == 0 ) { //rectangle
 					run("Crop");
@@ -103,19 +104,26 @@ function mainProcess( filePath ) {
 			//////////////////////
 			// thresholding and cleanup
 			//////////////////////
-			print(" - thresholding and cleanup");
-			setAutoThreshold("Otsu dark");// Minimum
-			run("Create Mask");
-			run("Options...", "iterations=1 count=1 black do=Nothing"); // reset binary options
-			run("Erode");
-			run("Dilate");
-			run("Dilate");
-			run("Erode");
-			run("Fill Holes");
-			
-			rename( maskTitle );
+			if ( autoThresholdOuterMask ) {
+				print(" - thresholding and cleanup");
+				setAutoThreshold("Otsu dark");// Minimum
+				run("Create Mask");
+				run("Options...", "iterations=1 count=1 black do=Nothing"); // reset binary options
+				run("Erode");
+				run("Dilate");
+				run("Dilate");
+				run("Erode");
+				run("Fill Holes");
+
+				rename( maskTitle );
+			} else {
+				run("Select All");
+				run("Create Mask");
+				run("Select None");
+			}
 			run("Merge Channels...", "c1=" + maskTitle + " c4=" + filename + " create keep");
 			selectWindow( compositeTitle );//selectImage(imageId);
+			
 
 			//////////////////////
 			// make selections
@@ -133,7 +141,15 @@ function mainProcess( filePath ) {
 				run("Create Mask");
 				run("Select None"); // remove selection
 			} else {
-				print( "   - nothing selected, skipping." );
+				if ( !autoThresholdOuterMask ) {
+					print( "   - nothing selected, selecting everything!" );
+					//setTool("rectangle");
+					//run("Select All");
+					//run("Create Mask");
+					//run("Select None");
+				} else {
+					print( "   - nothing additionally selected, skipping." );
+				}
 			}
 			
 			redrawComposit( compositeTitle, maskTitle, filename );
@@ -167,7 +183,6 @@ function mainProcess( filePath ) {
 
 			//////////////////////
 			// try to segment pores
-			// 3 possible algorithms!
 			//////////////////////
 			print(" - thresholding");
 			print( "   - " + thresholdTypeArray[thresholdType] );
@@ -268,6 +283,10 @@ macro "supported_manual_segmentation" {
 		Dialog.addMessage("Choose the threshold type (and method) for pore selection.") 
 		Dialog.addChoice("Threshold type:", thresholdTypeArray, thresholdTypeArray[thresholdType] );
 		Dialog.addChoice("Normal threshold method:", thresholdStdMethodsArray, thresholdStdMethodsArray[thresholdStdMethod] );
+		Dialog.addMessage(	"For BSE-Images try " + thresholdTypeArray[0] + "\n" +
+							"For TLD-Images try " + thresholdTypeArray[2] + " (Otsu or Triangle)");
+	// Otsu (11) or Triangle (15)!
+		Dialog.addCheckbox("Automatically try to create outer Mask.", autoThresholdOuterMask);
 		Dialog.show();
 		thresholdTypeString = Dialog.getChoice();
 		for (i=0; i<thresholdTypeArray.length; i++) {
@@ -281,16 +300,17 @@ macro "supported_manual_segmentation" {
 				thresholdStdMethod = i;
 			}
 		}
+		autoThresholdOuterMask = Dialog.getCheckbox();
+
 		filePath 		= File.openDialog("Choose a file");
 		//define number of slices for uniformity analysis
 	} else {
 		print("arguments found");
 		arg_split = split(getArgument(),"|");
-		filePath		= arg_split[0];
+		filePath			= arg_split[0];
+		thresholdType		= arg_split[1];
+		thresholdStdMethod	= arg_split[2];
+		autoThresholdOuterMask = arg_split[3];
 	}
-	
-	
-	
 	mainProcess( filePath );
-	
 }
