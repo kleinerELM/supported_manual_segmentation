@@ -1,5 +1,5 @@
 // Macro for ImageJ 1.52d for Windows
-// written by Florian Kleiner 2020
+// written by Florian Kleiner 2019
 // run from command line as follows
 // ImageJ-win64.exe -macro "C:\path\to\supported_manual_segmentation.ijm" "D:\path\to\file.tif|thresholdType|thresholdStdMethod"
 
@@ -209,9 +209,9 @@ function mainProcess( filePath ) {
 			print( "   - " + thresholdTypeArray[thresholdType] );
 			
 			if ( thresholdType == 0 ) {
-				radius = 45; //10
-				k = 0.1*substring(filename, 0, lengthOf(filename)-4);//0.25;
-				r = 0.5;
+				radius = 6;//*substring(filename, 0, lengthOf(filename)-4);//45; //10
+				k = 0.15;//*substring(filename, 0, lengthOf(filename)-4);//0.25;
+				r = 0.3;//*substring(filename, 0, lengthOf(filename)-4);;//0.5;
 				print( "     - radius=" + radius + " px, parameter 1=" + k + ", parameter 2=" + r );
 				run("Auto Local Threshold", "method=Phansalkar radius=" + radius + " parameter_1=" + k + " parameter_2=" + r);
 			} else if ( thresholdType == 1 ) {
@@ -298,6 +298,8 @@ function mainProcess( filePath ) {
 			run("Merge Channels...", "c1='C1-" + compFileName + "' c2='" + poreName + "' c4='C2-" + compFileName + "' create ignore");
 			print(" - saving pore selection selection");
 			saveAs("Tiff", outputDir_full + filename );
+			run("RGB Color");
+			saveAs("Jpeg", outputDir_full + substring(filename, 0, lengthOf(filename)-4) + ".jpg" );
 			
 		
 			//////////////////////
