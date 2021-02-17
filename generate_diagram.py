@@ -320,7 +320,7 @@ def processCSV( directory, filename ):
         #imageArea = width * pixelSize * height * pixelSize
         #print( " image area: " + str( width * height ) + " px² | " + str( imageArea ) + " nm²" )
         
-        delimiterChar = ',' if ( singeFile < 0 ) else "\t"
+        delimiterChar = ','# if ( singeFile < 0 ) else "\t"
         csv_reader = csv.reader(csv_file, delimiter=delimiterChar)
 
         lineNr = 0
@@ -407,7 +407,7 @@ def processCSV( directory, filename ):
 
         print( '  counting rows', end="\r" )
         rowCountCSV = sum(1 for row in csv_reader)
-        #print( '  found ' + str( rowCountCSV ) + ' rows', end="\r" )
+        print( '  found ' + str( rowCountCSV ) + ' rows', end="\r" )
         csv_file.seek(0)
         # read every line in csv
         for line in csv_reader:
@@ -415,6 +415,7 @@ def processCSV( directory, filename ):
             if ( lineNr % 1000 == 0) : print('  ... position ' + str( lineNr ) + ' of ' + str( rowCountCSV ), end="\r")
             if ( lineNr > 0 and line != "" ): # ignore first two lines (headline) and empty lines
                 if ( singeFile > 0 ):
+                    print(line)
                     diameter = float( line[ singeFile ] )
                     area = math.pi*(diameter/2)**2
                     circularity = 1
@@ -645,7 +646,9 @@ def processCSV( directory, filename ):
             columNr = 2
         label = re.sub('\.csv$', '', filename)
         label = re.sub('\-cut\_pores$', '', label)
-        plotBefehl = "'." + result_file + "' using 1:" + str(columNr) + " title '" + label.replace('_', '\_') + "' with linespoints" #boxes" #points" #linespoints"
+        #plotBefehl = "'." + result_file + "' using 1:" + str(columNr) + " title '" + label.replace('_', '\_') + "' with lines" #linespoints" #boxes" #points" #linespoints"
+        plotBefehl = "'." + result_file + "' using 1:5 title 'diameter' with lines" #linespoints" #boxes" #points" #linespoints"
+        plotBefehl += "'." + result_file + "' using 1:6 title 'area' with lines" #linespoints" #boxes" #points" #linespoints"
         gnuplotLineBefehl += plotBefehl
         if ( filename != 'combined.csv' ): gnuplotBefehl += plotBefehl + ", "
     # end processCSV()
@@ -662,6 +665,7 @@ def createGnuplotPlot( directory, filename, plot, openPDF = False ):
     global calcPoreDia
     global calcPoreDiaNames
     global calcPoreDiaUnits
+    global poreDiameterLimit
 
     print( "  Creating gnuplot plot for " + filename )
     #result_file = '/result_' + filename
@@ -671,7 +675,8 @@ def createGnuplotPlot( directory, filename, plot, openPDF = False ):
     gp_file.write( "set style fill solid\n" )
     
     gp_file.write( 'set datafile separator ","' + "\n" )
-    gp_file.write( "set xrange [" + str( minVal ) + ":" + str( maxVal ) + "]\n" ) # modify for unit change
+    #gp_file.write( "set xrange [" + str( minVal ) + ":" + str( maxVal ) + "]\n" ) # modify for unit change
+    gp_file.write( "set xrange [" + str( 0 ) + ":" + str( maxVal ) + "]\n" ) # modify for unit change
     gp_file.write( "set key left top\n")
     gp_file.write( 'set terminal pdf size 17cm,10cm' + "\n" )
     #gp_file.write( "set terminal wxt size 1000,500 enhanced font 'Arial,12' persist\n" )
@@ -691,8 +696,14 @@ def createGnuplotPlot( directory, filename, plot, openPDF = False ):
     gp_file.write( 'set xlabel "' + xLabel + '"' + "\n" )
     gp_file.write( 'set ylabel "' + yLabel + '"' + "\n" )
 
-    poreSizeRangeStr = ','.join(str(  round( e/rangeFactor, 6 ) ) for e in poreSizeRangeArray)
-    gp_file.write( 'set xtics (' + poreSizeRangeStr + ') rotate by 45 right' + "\n" )
+    if ( maxVal < poreDiameterLimit ) : poreDiameterLimit = round(maxVal/10,0)*10
+
+    if (poreDiameterLimit > 10):
+        poreSizeRangeStr = '0,' + str( round( poreDiameterLimit/10,0 ) ) + ',' + str( poreDiameterLimit ) + ''
+    else:
+        poreSizeRangeStr = ','.join(str(  round( e/rangeFactor, 6 ) ) for e in poreSizeRangeArray)
+        poreSizeRangeStr = '( ' + poreSizeRangeStr + ' )'
+    gp_file.write( 'set xtics ' + poreSizeRangeStr + ' rotate by 45 right' + "\n" )
         
     gp_file.write( "plot " + plot + "\n" )
     gp_file.close()
@@ -784,6 +795,7 @@ else:
         workingDirectory = os.path.split(file)[0]
         print( " Analysing \"" + filename + "\":" )
         processCSV( workingDirectory, filename )
+        createGnuplotPlot( workingDirectory, filename, gnuplotBefehl, True )
     else:
         print("file does not exist")
 print( '' )

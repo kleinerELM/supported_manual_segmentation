@@ -50,11 +50,11 @@ macro "add_ScaleBar" {
 				//////////////////////
 				print( "  convert to RGB..." );
 
-				run("Stack to RGB");
+				/*run("Stack to RGB");
 				flatImageId = getImageID();
 				selectImage(imageId);
 				close();
-
+				*/
 				print( "  adding scalebar ..." );
 
 				run("Scale Bar...", "width=1000 height=5 font=18 color=White background=None location=[Lower Right] bold overlay");
