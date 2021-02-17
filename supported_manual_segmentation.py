@@ -70,7 +70,8 @@ def getBaseSettings():
         "lower_diameter_limit" : 124,
         "upper_diameter_limit" : 10000,
         "do_multiprocessing"   : False,
-        "summarize"            : False
+        "summarize"            : False,
+        "show_result"          : False
     }
     return settings
 
@@ -78,9 +79,9 @@ def getBaseSettings():
 def processArguments():
     settings = getBaseSettings()
     argv = sys.argv[1:]
-    usage = sys.argv[0] + " [-h] [-o] [-c] [-b] [-m] [-s] [-l:] [-d]"
+    usage = sys.argv[0] + " [-h] [-o] [-c] [-b] [-m] [-s] [-r] [-l:] [-d]"
     try:
-        opts, args = getopt.getopt(argv,"hobmscl:d",[])
+        opts, args = getopt.getopt(argv,"hobmsrcl:d",[])
     except getopt.GetoptError:
         print( usage )
     for opt, arg in opts:
@@ -93,6 +94,7 @@ def processArguments():
             print( '-b                   : assume the images are already binary (black background, white objects)' )
             print( '-m                   : enable multithreaded processing' )
             print( '-s                   : summarize the data of all images' )
+            print( '-r                   : show resulting image' )
             print( '-d                   : show debug output' )
             print( '' )
             sys.exit()
@@ -108,6 +110,9 @@ def processArguments():
         elif opt in ("-s"):
             settings["summarize"] = True
             print( 'summarize the data of all images' )
+        elif opt in ("-r"):
+            settings["show_result"] = False
+            print( 'show resulting image' )
         elif opt in ("-l"):
             settings["force_pixel_size"] = int( arg )
             print( 'changed the lower pixel size limit to {} nm. All images will be scaled down accordingly.'.format(settings["force_pixel_size"]) )
@@ -191,6 +196,23 @@ def generate_single_diagram( settings, result_list, filename ):
 
     return df
 
+def get_denoised_img(img, smoothing_factor = 0):
+    f = [
+        {'h':10,
+        'templateWindowSize':7,
+        'searchWindowSize':21},
+        {'h':17,
+        'templateWindowSize':7,
+        'searchWindowSize':21},
+    ]
+    img = cv2.fastNlMeansDenoising( img,
+                            h                    = f[smoothing_factor]['h'],
+                            templateWindowSize = f[smoothing_factor]['templateWindowSize'],
+                            searchWindowSize   = f[smoothing_factor]['searchWindowSize']
+                            )
+
+    return img
+
 
 def process_particles(file_name, file_extension, scaling, settings):
     if not settings["do_multiprocessing"]: print('  load image')
@@ -224,13 +246,8 @@ def process_particles(file_name, file_extension, scaling, settings):
     # loading denoised image
     if not os.path.isfile(paths['nlm']):
         if not settings["do_multiprocessing"]:  print("  Non-local Means Denoising")
-        img = cv2.fastNlMeansDenoising( img,
-                                h=10,
-                                templateWindowSize=7,
-                                searchWindowSize=(21)
-                                )
+        img = get_denoised_img(img, smoothing_factor = 0)
 
-        cv2.imwrite(paths['nlm'], img, UC.setCVScaling(scaling))
     else:
         img = cv2.imread(paths['nlm'], cv2.IMREAD_GRAYSCALE)
 
@@ -241,18 +258,21 @@ def process_particles(file_name, file_extension, scaling, settings):
     # img1 = basic.get_phansalkar_binary(img, window_size=33, k=0.6, p=0.6, q=10.0)
     img1 = basic.get_phansalkar_binary(img, window_size=39, k=0.30, p=0.5, q=10.0)
 
-    """
+    
     pore_area = 0
     pore_areas, _ = cv2.findContours(np.invert(img1).astype(np.uint8) * 255, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
     for i in range(len(pore_areas)):
         pore_area += cv2.contourArea(pore_areas[i])*((scaling['x']/1000)**2)
 
-    print(pore_area,  image_area)
-    if pore_area > 0.3*image_area:
-        print('  pore area is very large. wrong segmentation suspected. Changing Phansalkar parameters')
-        img1 = basic.get_phansalkar_binary(img, window_size=39, k=0.6, p=0.6, q=10.0)
-    """
+    if pore_area > 0.5*image_area or len(pore_areas)>3000:
+        print('  pore area is very large. wrong segmentation suspected. Changing denoising parameters')
+        
+        # reloading denoised image
+        if not settings["do_multiprocessing"]:  print("  Non-local Means Denoising")
+        img = get_denoised_img(img, smoothing_factor = 1)
+        img1 = basic.get_phansalkar_binary(img, window_size=39, k=0.30, p=0.5, q=10.0)
+    
     # black backround with white objects and convert to 0 to 255
     mask = np.invert(img1).astype(np.uint8) * 255
 
@@ -323,9 +343,10 @@ def process_particles(file_name, file_extension, scaling, settings):
     cv2.imwrite(paths['por'], mask2, UC.setCVScaling(scaling))
     img = basic.overlay_mask(img, mask2, color=(0,255,0))
 
-    with napari.gui_qt():
-        viewer = napari.view_image(img, name=file_name)
-        viewer.scale_bar.visible = True
+    if settings["show_result"]:
+        with napari.gui_qt():
+            viewer = napari.view_image(img, name=file_name)
+            viewer.scale_bar.visible = True
 
     # colored_mask works with RGB -> therefore conversion is needed
     cv2.imwrite(paths['col'], cv2.cvtColor(img, cv2.COLOR_RGB2BGR), UC.setCVScaling(scaling) )
@@ -333,7 +354,7 @@ def process_particles(file_name, file_extension, scaling, settings):
     # remove grains below a certain size
     area_limit  = 4
     min_size_nm = area_limit * (scaling['x']**2)
-    if not settings["do_multiprocessing"]: print( '  removing objects below an area of {} nm²'.format(min_size_nm) )
+    if not settings["do_multiprocessing"]: print( '  removing objects below an area of {:.2f} nm²'.format(min_size_nm) )
 
     contours, _ = cv2.findContours(mask2, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     selected_contours = []
@@ -385,7 +406,7 @@ def calculate_summary(file_name, df, h, w, scaling, settings, remove_area_size):
         print('-'*40 )
         print(' {} results:'.format( file_name ) )
         print('  image_area            = {:.2f} µm x {:.2f} µm = {:.2f} µm²'.format( (w*scaling['x']/1000), (h*scaling['y']/1000), ( image_area ) ) )
-        print('  analyzed image_area   = {:.2f} µm² ({} %)'.format(  (image_area - remove_area_size), (100/image_area*(image_area-remove_area_size)) ) )
+        print('  analyzed image_area   = {:.2f} µm² ({:.2f} %)'.format(  (image_area - remove_area_size), (100/image_area*(image_area-remove_area_size)) ) )
         print('  pixel size            = ({:.2f} nm)²'.format( scaling['x'] ) )
         print('  analyzed particles    = {}'.format(len(df)) )
         if diameter_mean > 900:
@@ -396,7 +417,8 @@ def calculate_summary(file_name, df, h, w, scaling, settings, remove_area_size):
         print('  volume                = {:.3e} cm³'.format( volume_cm ) )
         print('-'*40 )
         print()
-    return [ file_name, int(w*scaling['x']), int(h*scaling['y']),  int(h * w * ((scaling['x'])**2)), len(df), diameter_mean, diameter_std,  surface_m, volume_cm, remove_area_size ]
+    df['pixel size'] = scaling['x']
+    return [ file_name, int(w*scaling['x']), int(h*scaling['y']),  int(h * w * ((scaling['x'])**2)), len(df), diameter_mean, diameter_std,  surface_m, volume_cm, remove_area_size, scaling['x'] ]
 
 def store_result(result):
     # global result_df_list
@@ -454,7 +476,7 @@ if __name__ == '__main__':
 
         # create result dictionary containing dataframes of pore data
         position = 0
-        result_columns = ['diameter', 'area', 'surface', 'volume', 'feret', 'extend']
+        result_columns = ['diameter', 'area', 'surface', 'volume', 'pixel size']
         result_df_list = {}
         result_df = pd.DataFrame(columns=result_columns)
         summary_list = []
@@ -477,7 +499,9 @@ if __name__ == '__main__':
 
                 store_result( process_particles(file_name, file_extension, scaling, settings) )
 
-        df_summary = pd.DataFrame(summary_list , columns = ['filename', 'width [nm]', 'height [nm]', 'area [nm²]', 'analyzed particles', 'mean diameter [nm]', 'mean diameter std [nm]', 'surface [m²]', 'volume [cm³]', 'ignored area [µm²]'] )
+        df_summary = pd.DataFrame(summary_list , columns = ['filename', 'width [nm]', 'height [nm]', 'area [nm²]', 'analyzed particles', 'mean diameter [nm]', 'mean diameter std [nm]', 'surface [m²]', 'volume [cm³]', 'ignored area [µm²]', 'pixel size [nm/px]'] )
         df_summary.to_csv(settings["targetDirectory"] + 'summary.csv')
+        print('saving to {}'.format(settings["targetDirectory"] + 'all_pores.csv'))
+        result_df.to_csv(settings["targetDirectory"] + 'all_pores.csv')
 
     print( "Script DONE!" )
