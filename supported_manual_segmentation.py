@@ -56,6 +56,17 @@ else:
 
 import basic_functions_libary as basic
 
+mcld_file = 'size_distribution_class'
+mcld_path = os.path.dirname( home_dir ) + os.sep + 'Measure_Cord_Length_Distribution' + os.sep
+if ( os.path.isdir( mcld_path ) and os.path.isfile( mcld_path + mcld_file + '.py' ) or os.path.isfile( home_dir + mcld_file + '.py' ) ):
+    if ( os.path.isdir( mcld_path ) ): sys.path.insert( 1, mcld_path )
+    import size_distribution_class as mcld
+else:
+    programInfo()
+    print( 'missing ' + rsb_path + rsb_file + '.py!' )
+    print( 'download from https://github.com/kleinerELM/Measure_Cord_Length_Distribution' )
+    sys.exit()
+
 UC = es.unit()
 
 # Initial function to load the settings
@@ -133,20 +144,29 @@ def getTargetFolder(settings):
         os.makedirs( targetDirectory )
     return targetDirectory
 
-def process_result_row( settings, contour, scale = 1, area_limit = 4 ):
+def process_result_row( settings, contour, scale = 1, area_limit = 4, feret_limit = 0.2, extend_limit = 0.2 ):
     result_row = False
     area = cv2.contourArea(contour)*(scale**2)
     diameter_raw = basic.getPoreDiameter(area) # uncorrected diameter - raw data diameter
     diameter = basic.getPoreDiameter(area)*settings["correction_factor"]
-    if area > area_limit:
+
+
+    if area > area_limit :
+        # filter malformed particles (segmented curtaining)
         rect = cv2.minAreaRect(contour)
         r_w, r_h = rect[1]
-        if settings["correction_factor"] != 1: area = basic.getPoreArea(diameter)# * math.pi*((diameter/2)**2)
-        result_row = [
-            diameter,
-            area,
-            basic.getPoreSurface(diameter=diameter),
-            basic.getPoreVolume(diameter=diameter)]
+        feret = r_w / r_h if r_w < r_h else  r_h / r_w
+        extend = area / (r_w * r_h*(scale**2))
+
+        if feret > feret_limit and extend > extend_limit:
+            rect = cv2.minAreaRect(contour)
+            r_w, r_h = rect[1]
+            if settings["correction_factor"] != 1: area = basic.getPoreArea(diameter)# * math.pi*((diameter/2)**2)
+            result_row = [
+                diameter,
+                area,
+                basic.getPoreSurface(diameter=diameter),
+                basic.getPoreVolume(diameter=diameter)]
 
     return result_row
 
@@ -213,6 +233,10 @@ def get_denoised_img(img, smoothing_factor = 0):
 
     return img
 
+# since saving the scaling of a Tiff image does nor really wor reliable, this functions saves the image using PIL
+def save_with_scaling(path, img, scaling):
+    im_pil = Image.fromarray(img)
+    im_pil.save( path, tiffinfo = UC.setImageJScaling( scaling ) )
 
 def process_particles(file_name, file_extension, scaling, settings):
     if not settings["do_multiprocessing"]: print('  load image')
@@ -226,7 +250,7 @@ def process_particles(file_name, file_extension, scaling, settings):
         'nlm': settings['targetDirectory'] + os.sep + file_name + '_nlm' + file_extension,
         # mask with ignored areas in white
         'ign': settings['targetDirectory'] + os.sep + file_name + '_ignored_area' + file_extension,
-        # pore mask
+        # selected pore mask
         'por': settings['targetDirectory'] + os.sep + file_name + '_pores' + file_extension,
         # image with colored, overlayed masks (red: ignored, green: pores)
         'col': settings['targetDirectory'] + os.sep + file_name + '_ignored_area_m' + file_extension
@@ -239,7 +263,7 @@ def process_particles(file_name, file_extension, scaling, settings):
         infoBarHeight = rsb.getInfoBarHeightFromMetaData( settings["workingDirectory"], file_name + file_extension, verbose=True )
         img = rsb.removeScaleBarCV( img, infoBarHeight=infoBarHeight)
 
-        cv2.imwrite(paths['cut'], img, UC.setCVScaling(scaling))
+        save_with_scaling(paths['cut'], img, scaling)
     else:
         img = cv2.imread(paths['cut'], cv2.IMREAD_GRAYSCALE)
 
@@ -258,7 +282,7 @@ def process_particles(file_name, file_extension, scaling, settings):
     # img1 = basic.get_phansalkar_binary(img, window_size=33, k=0.6, p=0.6, q=10.0)
     img1 = basic.get_phansalkar_binary(img, window_size=39, k=0.30, p=0.5, q=10.0)
 
-    
+
     pore_area = 0
     pore_areas, _ = cv2.findContours(np.invert(img1).astype(np.uint8) * 255, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -267,12 +291,12 @@ def process_particles(file_name, file_extension, scaling, settings):
 
     if pore_area > 0.5*image_area or len(pore_areas)>3000:
         print('  pore area is very large. wrong segmentation suspected. Changing denoising parameters')
-        
+
         # reloading denoised image
         if not settings["do_multiprocessing"]:  print("  Non-local Means Denoising")
         img = get_denoised_img(img, smoothing_factor = 1)
         img1 = basic.get_phansalkar_binary(img, window_size=39, k=0.30, p=0.5, q=10.0)
-    
+
     # black backround with white objects and convert to 0 to 255
     mask = np.invert(img1).astype(np.uint8) * 255
 
@@ -287,7 +311,7 @@ def process_particles(file_name, file_extension, scaling, settings):
         if not settings["do_multiprocessing"]:  print("  asking for areas to ignore")
 
         with napari.gui_qt():
-            viewer = napari.view_image(img, name=file_name)
+            viewer = napari.view_image(img, name='select ' + file_name)
             viewer.scale_bar.visible = True
 
         has_removed_area = ( len(viewer.layers) > 1 and not settings["do_multiprocessing"] )
@@ -320,7 +344,7 @@ def process_particles(file_name, file_extension, scaling, settings):
 
             # save ignore mask
             removed_area_mask = cv2.drawContours(np.zeros([h, w], np.uint8), ignored_areas, contourIdx=-1, color=(255), thickness=-1)
-            cv2.imwrite(paths['ign'], removed_area_mask, UC.setCVScaling(scaling))
+            save_with_scaling(paths['ign'], removed_area_mask, scaling)
 
 
     else:
@@ -339,45 +363,54 @@ def process_particles(file_name, file_extension, scaling, settings):
 
         img = basic.overlay_mask(img, removed_area_mask, color=(255,0,0))
 
-    # write final phansalkar mask
-    cv2.imwrite(paths['por'], mask2, UC.setCVScaling(scaling))
-    img = basic.overlay_mask(img, mask2, color=(0,255,0))
-
     if settings["show_result"]:
         with napari.gui_qt():
-            viewer = napari.view_image(img, name=file_name)
+            viewer = napari.view_image(img, name='result ' + file_name)
             viewer.scale_bar.visible = True
-
-    # colored_mask works with RGB -> therefore conversion is needed
-    cv2.imwrite(paths['col'], cv2.cvtColor(img, cv2.COLOR_RGB2BGR), UC.setCVScaling(scaling) )
 
     # remove grains below a certain size
     area_limit  = 4
     min_size_nm = area_limit * (scaling['x']**2)
     if not settings["do_multiprocessing"]: print( '  removing objects below an area of {:.2f} nm²'.format(min_size_nm) )
 
+    feret_limit = 0.2 # remove thin objects
+    extend_limit = 0.3 # remove objects with very little area/rectarea (multiple thin and connected)
+
     contours, _ = cv2.findContours(mask2, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     selected_contours = []
     result_list = []
 
     for i in range(len(contours)):#start_pos, end_pos):
-        result_row = process_result_row( settings, contours[i], scale = scaling['x'], area_limit = area_limit)
+        result_row = process_result_row( settings, contours[i], scale = scaling['x'], area_limit = area_limit, feret_limit = feret_limit, extend_limit = extend_limit)
         if result_row != False:
             result_list.append( result_row )
             selected_contours.append(contours[i])
 
     if not settings["do_multiprocessing"]: print('  removed {} objects from segmented {} objects'.format( len(contours)-len(result_list), len(contours) ))
 
+    selected_mask = np.zeros(img.shape[:2], dtype="uint8")
     if len(result_list) > 0:
         # process PSD and diagrams
         filename = settings["targetDirectory"] + file_name + '_psd'
         df = generate_single_diagram(settings, result_list, filename)
+
+        cv2.drawContours(selected_mask, selected_contours, -1, 255, -1)
 
         summary_list = calculate_summary(file_name, df, h, w, scaling, settings, remove_area_size)
     else:
         summary_list = []
         df = pd.DataFrame(columns = ['diameter', 'area', 'surface', 'volume'])
         print('no valid grain object found in {} !'.format(file_name))
+
+    # colored_mask works with RGB -> therefore conversion is needed
+    img = basic.overlay_mask(img, selected_mask, color=(0,255,0))
+    # write final phansalkar mask
+    save_with_scaling(paths['por'], selected_mask, scaling)
+    save_with_scaling(paths['col'], cv2.cvtColor(img, cv2.COLOR_RGB2BGR), scaling)
+
+    # SD = mcld.size_distribution()
+    # cld_h = SD.process_directional_CLD( img, 'horizontal', verbose=True)
+    # cld_v = SD.process_directional_CLD( img, 'vertical', verbose=True)
 
     return summary_list, df
 
