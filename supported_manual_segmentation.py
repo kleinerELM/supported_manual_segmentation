@@ -67,8 +67,6 @@ else:
     print( 'download from https://github.com/kleinerELM/Measure_Cord_Length_Distribution' )
     sys.exit()
 
-UC = es.unit()
-
 # Initial function to load the settings
 def getBaseSettings():
     settings = {
@@ -236,7 +234,7 @@ def get_denoised_img(img, smoothing_factor = 0):
 # since saving the scaling of a Tiff image does nor really wor reliable, this functions saves the image using PIL
 def save_with_scaling(path, img, scaling):
     im_pil = Image.fromarray(img)
-    im_pil.save( path, tiffinfo = UC.setImageJScaling( scaling ) )
+    im_pil.save( path, tiffinfo = es.setImageJScaling( scaling ) )
 
 def process_particles(file_name, file_extension, scaling, settings):
     if not settings["do_multiprocessing"]: print('  load image')
