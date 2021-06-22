@@ -1,40 +1,48 @@
-# supported_manual_segmentation
-ImageJ macro to manually segment CSH phases of BSE or SE images and automatically segment the pores within the selection. The images have to be prepared to have the scalebar removed and the scale has to be saved in the metadata of the file for ImageJ!
+# Supported Manual Segmentation
 
-On the fist start the script shows a setting menu to adjust the script:
- * Batch processing (directory). -  You can coose to process a directory full of images at once.
- * Use non local mean denoising (else smooth). -  Choose the denoising algorithm
- * Threshold type: - One of three thresholding methods to segment the pores.
- * Normal threshold method: - Ff "normal threshold" is selected, the frim imageJ provided method can be selected here.
- * Automatically try to create outer Mask. - This will activate an automatic outer selection (only suitable in a few cases).
- * Manually remove inner areas during processing? - If active, the script will ask you to select inner areas which should be ignored.
- * Ask for cleanup options. - always aks if on of the cleanup options below will be applied to an image.
- *   Else: Auto crop bottom (4px)? - Removes 4px high lines from the bottom of the image.
- *   Else: Do 'Erode/Dilate'? - modifies the pore selection using standard binary operations
- *         or: Do 'Despecle'? - modifies the pore selection using standard binary operations
- *   Else: Do 'Close-'?	- modifies the pore selection using standard binary operations
- *   Else: Do 'Fill Holes'? - modifies the pore selection using standard binary operations
- * Exclude border particles from analysis? - Particles touching the border of an image will be ignored
+Python script to manually segment C-S-H phases of low contrast SE images and automatically segment the pores within the selection.
 
-The script first denoises the image using the selected algorithm.
-Then you have to select the CSH area or the area of interest. Holes can be selected in the second step (which will be repeated until you have selected every hole which should not be analysed).
-The script will then create a csv file in the folder "manual_segmentation" containing the size of the manual segmented area.
-Afterwards the script thresholds the original image using the selected threshold method to segment the pores. The pore binary and the manual mask images will then be combined in a way, that only the pores within the selected area remain.
-The pores are then cleaned using standard binary operations like erode, dilate, close, despecle an/or "Fill Holes".
-Another csv file containing all pore sizes is finally created and saved in the folder "full_segmentation".
+<img src="./readme_images/raw.jpg" alt="raw SE image of C-S-H (dark grey) and unhydrated alite (light grey)" width="200"/>
 
-The intermediate mask images will also be saved in the mentioned subfolders.
+## Script options
 
-run from command line:
 ```
-ImageJ-win64.exe -macro "C:\path\to\supported_manual_segmentation.ijm" "D:\path\to\file.tif|thresholdType|thresholdStdMethod"
+usage: python ./supported_manual_segmentation.py [-h] [-o] [-c] [-b] [-m] [-s] [-r] [-l:] [-d]
+
+-h,                  : show this help
+-o,                  : setting output directory name [processed]
+-l,                  : limit pixel scaling [processed]
+-c                   : correct the diameter values with the factor 4/Pi [Krumbein 1935]
+-b                   : assume the images are already binary (black background, white objects)
+-m                   : enable multithreaded processing
+-s                   : summarize the data of all images
+-r                   : show resulting image
+-d                   : show debug output
 ```
 
-thresholdType: 0 = Auto Local Threshold (Phansalkar); 1 = Robust Automatic Threshold Selection; 2 = standard
-thresholdStdMethod: Standard methods provided by ImageJ (same order, from 0 to 16)
+## Usage and program procedure
 
-To analyze the data and to process some characteristic parameters and diagrams, run the generate_diagram.py python scipt and select the full_segmentation folder.
+At first select the folder which contains the images.
+Then, the script denoises the image using the non-local-means algorithm provided by OpenCV and calculate the non-local threshold indroduced by Phansalkar et al. (DOI: [10.1109/ICCSP.2011.5739305](https://doi.org/10.1109/ICCSP.2011.5739305)).
+In the then appearing napari window, you have to select the area which has to be excluded from the analysis.
 
+<img src="./readme_images/manual_segmentation.png" alt="napari window to select excluded areas" width="300"/>
 
-expected CSV Format:
-poreNr,Area,Circularity,Feret,FeretX,FeretY,FeretAngle,MinFeret,AR,Round,Solidity
+To do this, select the `shapes` layer, press (P) or select the button with the triangle symbol and add the polygon along the phase to ignore as shown in the image above.
+After that, close the window and continue with the next image.
+A subfolder `\processed_nc\` will be created within the working directory, including the image without the microscope scalebar (only for FEI, and thermofischer SEMs), a binary image with the manual segmentation and a binary image with the segmented pores. Additionaly a SEM image, overlayed with the manual segmentation (blue) and the segmented pores (green) will be provided with a CSV which contains the pore size distribution.
+
+<img src="./readme_images/segmented.jpg" alt="final segmented image" width="200"/>
+
+## Corresponding paper
+
+This script has been created for the analysis explained in `Argon Broad Ion beam sectioning and high resolution scanning electron microscopy imaging of hydrated alite`, to be published in Cement and Concrete Research in 2021 by Florian Kleiner, Christian Matthes and Christiane Rößler, Bauhaus-Universität Weimar
+
+## Requirements
+
+This script was tested with Python 3.9
+
+`pip install -r requirements.txt`
+
+It may be possible than newer versions of napari trow warnings due to the way of calling it.
+Nevertheless, this script at least works with napari version 4.8 .

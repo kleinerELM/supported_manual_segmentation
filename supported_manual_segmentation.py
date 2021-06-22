@@ -11,11 +11,8 @@ from PIL import Image
 Image.MAX_IMAGE_PIXELS = 10000000000 # prevent decompressionbomb warning for typical images
 import tkinter as tk
 from tkinter import filedialog
-import time
-import subprocess
-from subprocess import check_output
 import multiprocessing
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import napari
 
 def programInfo():
