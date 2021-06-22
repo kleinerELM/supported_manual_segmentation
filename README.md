@@ -28,11 +28,13 @@ In the then appearing napari window, you have to select the area which has to be
 
 <img src="./readme_images/manual_segmentation.png" alt="napari window to select excluded areas" width="300"/>
 
-To do this, select the `shapes` layer, press (P) or select the button with the triangle symbol and add the polygon along the phase to ignore as shown in the image above.
+To do this, add a `shapes` layer (polygon button next to the points button), press (P) or select the button with the triangle symbol and add the polygon along the phase to ignore as shown in the image above.
 After that, close the window and continue with the next image.
 A subfolder `\processed_nc\` will be created within the working directory, including the image without the microscope scalebar (only for FEI, and thermofischer SEMs), a binary image with the manual segmentation and a binary image with the segmented pores. Additionaly a SEM image, overlayed with the manual segmentation (blue) and the segmented pores (green) will be provided with a CSV which contains the pore size distribution.
 
 <img src="./readme_images/segmented.jpg" alt="final segmented image" width="200"/>
+
+Finally, the script creates summary CSVs with some statistics and all pores within the folder.
 
 ## Corresponding paper
 
