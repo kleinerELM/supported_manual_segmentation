@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
-import os, sys, getopt
 import cv2
 import math
 import numpy as np
 import time
-from skimage.exposure import equalize_adapthist, equalize_hist, rescale_intensity
-from skimage.filters.thresholding import dtype_limits, _mean_std#, threshold_phansalkar
+from skimage.exposure import equalize_adapthist
+from skimage.filters.thresholding import _mean_std#, threshold_phansalkar
 
 def denoise_nlm_cv2( image, h=15, templateWindowSize=7, searchWindowSize=16, sigma_est=0 ):
     """image denoising based on opencv with woking parameter set

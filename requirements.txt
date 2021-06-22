@@ -1,11 +1,10 @@
-# requirements.
+# requirements
 tifffile
 numpy
 pillow
 multiprocess
 opencv-python
-math
 pandas
-tkinter
-multiprocessing
+tk
 napari
+multiprocessing
